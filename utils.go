@@ -8,22 +8,6 @@ import (
 	"strings"
 )
 
-type Task struct {
-	Id                    string
-	ExternalId            string
-	OwnerExternalId       string
-	Subject               string
-	DueDate               string
-	ContactName           string
-	ContactNameExternalId string
-	RelatedTo             string
-	RelatedToExternalId   string
-	Status                string
-	Priority              string
-	Description           string
-	Tags                  []string
-}
-
 type Address struct {
 	Street1     string
 	Street2     string
@@ -37,32 +21,57 @@ type Company struct {
 	Name          string
 	Website       string
 	AnnualRevenue string
+	SicCode       string
 	Physical      Address
 	Mailing       Address
 }
 
 type Contact struct {
 	Id             string
-	ExternalId     string
 	OwnerId        string
 	FirstName      string
 	LastName       string
 	Email          string
 	PhoneNumber    string
 	AltPhoneNumber string
-	Status         string
 	Tags           []string
 	Company        Company
 }
 
 type Lead struct {
-	Stage   string
+	Status  string
 	Contact Contact
 }
 
 type Deal struct {
-	Stage   string `default:"deal"`
+	Stage   Stage
 	Contact Contact
+}
+
+type User struct {
+	Id    string
+	Name  string
+	Email string
+}
+
+type Task struct {
+	Id            string
+	OwnerId       string
+	Subject       string
+	DueDate       string
+	ContactName   string
+	ContactNameId string
+	RelatedTo     string
+	RelatedToId   string
+	Status        string
+	Priority      string
+	Description   string
+	Tags          []string
+}
+
+type Stage struct {
+	Name        string
+	Probability string
 }
 
 func check(err error) {
@@ -71,29 +80,61 @@ func check(err error) {
 	}
 }
 
-func importZohoContacts(path string) []Contact {
-	f, err := os.Open(path)
+func importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string) []Deal {
+	dealFile, err := os.Open(pathToDealsCSV)
 	check(err)
-	defer f.Close()
-	lines, err := csv.NewReader(f).ReadAll()
+	defer dealFile.Close()
+	accountFile, err := os.Open(pathToAccountsCSV)
 	check(err)
-	var contacts []Contact
-	for i, x := range lines[0] {
-		fmt.Println(i, x)
-	}
-	return contacts
-}
-
-func importZohoDeals(path string) []Deal {
-	f, err := os.Open(path)
+	defer accountFile.Close()
+	contactFile, err := os.Open(pathToContactsCSV)
 	check(err)
-	defer f.Close()
-	lines, err := csv.NewReader(f).ReadAll()
+	defer contactFile.Close()
+	dealLines, err := csv.NewReader(dealFile).ReadAll()
+	check(err)
+	accountLines, err := csv.NewReader(accountFile).ReadAll()
+	check(err)
+	contactLines, err := csv.NewReader(contactFile).ReadAll()
 	check(err)
 	var deals []Deal
-	for i, x := range lines[0] {
-		fmt.Println(i, x)
+	for _, x1 := range dealLines[1:] {
+		stage := Stage{
+			Name:        x1[7],
+			Probability: x1[9],
+		}
+		var company Company
+		for _, x2 := range accountLines[1:] {
+			if x2[0] == x1[5] {
+				company = Company{
+					Name:          x2[3],
+					Website:       x2[8],
+					AnnualRevenue: x2[12],
+					SicCode:       x2[13],
+				}
+			}
+		}
+		var contact Contact
+		for _, x3 := range contactLines[1:] {
+			if x3[0] == x1[15] {
+				contact = Contact{
+					Id:             x3[0],
+					OwnerId:        x3[1],
+					FirstName:      x3[3],
+					LastName:       x3[4],
+					Email:          x3[9],
+					PhoneNumber:    x3[12],
+					AltPhoneNumber: x3[13],
+					Tags:           strings.Split(x3[38], ","),
+					Company:        company,
+				}
+			}
+		}
+		deals = append(deals, Deal{
+			Stage:   stage,
+			Contact: contact,
+		})
 	}
+	fmt.Println(deals[0])
 	return deals
 }
 
@@ -123,16 +164,15 @@ func importZohoLeads(path string) []Lead {
 				Zip:     x[37],
 			},
 		}
-		leads = append(leads, Lead{Stage: "lead", Contact: Contact{
+		leads = append(leads, Lead{Status: x[9], Contact: Contact{
 			Company:        company,
-			ExternalId:     x[0],
+			Id:             x[0],
 			OwnerId:        x[1],
 			FirstName:      x[4],
 			LastName:       x[5],
 			Email:          x[6],
 			PhoneNumber:    x[7],
 			AltPhoneNumber: x[32],
-			Status:         x[9],
 			Tags:           strings.Split(x[19], ","),
 		}})
 	}
@@ -148,18 +188,18 @@ func importZohoTasks(path string) []Task {
 	var tasks []Task
 	for _, x := range lines[1:] {
 		tasks = append(tasks, Task{
-			ExternalId:            x[0],
-			OwnerExternalId:       x[1],
-			Subject:               x[3],
-			DueDate:               x[4],
-			ContactName:           x[6],
-			ContactNameExternalId: x[5],
-			RelatedTo:             x[8],
-			RelatedToExternalId:   x[7],
-			Status:                x[9],
-			Priority:              x[10],
-			Description:           x[17],
-			Tags:                  strings.Split(x[21], ","),
+			Id:            x[0],
+			OwnerId:       x[1],
+			Subject:       x[3],
+			DueDate:       x[4],
+			ContactName:   x[6],
+			ContactNameId: x[5],
+			RelatedTo:     x[8],
+			RelatedToId:   x[7],
+			Status:        x[9],
+			Priority:      x[10],
+			Description:   x[17],
+			Tags:          strings.Split(x[21], ","),
 		})
 	}
 	return tasks
