@@ -1,12 +1,24 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/csv"
-	"fmt"
+	"encoding/gob"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
+
+type Data struct {
+	Leads []Lead
+	Deals []Deal
+	Tasks []Task
+}
 
 type Address struct {
 	Street1     string
@@ -55,18 +67,16 @@ type User struct {
 }
 
 type Task struct {
-	Id            string
-	OwnerId       string
-	Subject       string
-	DueDate       string
-	ContactName   string
-	ContactNameId string
-	RelatedTo     string
-	RelatedToId   string
-	Status        string
-	Priority      string
-	Description   string
-	Tags          []string
+	Id          string
+	OwnerId     string
+	Subject     string
+	DueDate     string
+	RelatedTo   string
+	RelatedToId string
+	Status      string
+	Priority    string
+	Description string
+	Tags        []string
 }
 
 type Stage struct {
@@ -134,7 +144,6 @@ func importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string
 			Contact: contact,
 		})
 	}
-	fmt.Println(deals[0])
 	return deals
 }
 
@@ -188,25 +197,66 @@ func importZohoTasks(path string) []Task {
 	var tasks []Task
 	for _, x := range lines[1:] {
 		tasks = append(tasks, Task{
-			Id:            x[0],
-			OwnerId:       x[1],
-			Subject:       x[3],
-			DueDate:       x[4],
-			ContactName:   x[6],
-			ContactNameId: x[5],
-			RelatedTo:     x[8],
-			RelatedToId:   x[7],
-			Status:        x[9],
-			Priority:      x[10],
-			Description:   x[17],
-			Tags:          strings.Split(x[21], ","),
+			Id:          x[0],
+			OwnerId:     x[1],
+			Subject:     x[3],
+			DueDate:     x[4],
+			RelatedTo:   x[8],
+			RelatedToId: x[7],
+			Status:      x[9],
+			Priority:    x[10],
+			Description: x[17],
+			Tags:        strings.Split(x[21], ","),
 		})
 	}
 	return tasks
 }
 
-// create s3 bucket
-func createBucket() {}
+// upload deals to s3 bucket
+func (d Data) uploadDealsToS3(bucketName string) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-2"))
+	check(err)
+	client := s3.NewFromConfig(cfg)
+	var buf bytes.Buffer
+	for _, x := range d.Deals {
+		gob.NewEncoder(&buf).Encode(x)
+		_, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(x.Contact.Id),
+			Body:   bytes.NewReader(buf.Bytes()),
+		})
+		check(err)
+	}
+}
 
-// upload csv to your s3 bucket
-func uploadCsv() {}
+// upload leads to s3 bucket
+func (d Data) uploadLeadsToS3(bucketName string) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-2"))
+	check(err)
+	client := s3.NewFromConfig(cfg)
+	var buf bytes.Buffer
+	for _, x := range d.Leads {
+		gob.NewEncoder(&buf).Encode(x)
+		_, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
+			Bucket: aws.String(bucketName),
+			Key:    aws.String(x.Contact.Id),
+			Body:   bytes.NewReader(buf.Bytes()),
+		})
+		check(err)
+	}
+}
+
+func (d Data) emailsToFile() {
+	var emails []string
+	emailFile, err := os.Create("emails.csv")
+	check(err)
+	defer emailFile.Close()
+	for _, x := range d.Leads {
+		if x.Contact.Email != "" {
+			emails = append(emails, x.Contact.Email)
+		}
+	}
+	w := csv.NewWriter(emailFile)
+	w.Write(emails)
+	w.Flush()
+}
