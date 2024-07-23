@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/gob"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -107,34 +108,34 @@ func importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string
 	contactLines, err := csv.NewReader(contactFile).ReadAll()
 	check(err)
 	var deals []Deal
-	for _, x1 := range dealLines[1:] {
+	for _, x := range dealLines[1:] {
 		stage := Stage{
-			Name:        x1[7],
-			Probability: x1[9],
+			Name:        x[7],
+			Probability: x[9],
 		}
 		var company Company
-		for _, x2 := range accountLines[1:] {
-			if x2[0] == x1[5] {
+		for _, y := range accountLines[1:] {
+			if y[0] == x[5] {
 				company = Company{
-					Name:          x2[3],
-					Website:       x2[8],
-					AnnualRevenue: x2[12],
-					SicCode:       x2[13],
+					Name:          y[3],
+					Website:       y[8],
+					AnnualRevenue: y[12],
+					SicCode:       y[13],
 				}
 			}
 		}
 		var contact Contact
-		for _, x3 := range contactLines[1:] {
-			if x3[0] == x1[15] {
+		for _, z := range contactLines[1:] {
+			if z[0] == x[15] {
 				contact = Contact{
-					Id:             x3[0],
-					OwnerId:        x3[1],
-					FirstName:      x3[3],
-					LastName:       x3[4],
-					Email:          x3[9],
-					PhoneNumber:    x3[12],
-					AltPhoneNumber: x3[13],
-					Tags:           strings.Split(x3[38], ","),
+					Id:             z[0],
+					OwnerId:        z[1],
+					FirstName:      z[3],
+					LastName:       z[4],
+					Email:          z[9],
+					PhoneNumber:    z[12],
+					AltPhoneNumber: z[13],
+					Tags:           strings.Split(z[38], ","),
 					Company:        company,
 				}
 			}
@@ -246,17 +247,34 @@ func (d Data) uploadLeadsToS3(bucketName string) {
 	}
 }
 
-func (d Data) emailsToFile() {
-	var emails []string
-	emailFile, err := os.Create("emails.csv")
+// export []Contact to csv "/export.csv"
+func exportToCSV(data []Contact) {
+	f, err := os.Create("export.csv")
 	check(err)
-	defer emailFile.Close()
-	for _, x := range d.Leads {
-		if x.Contact.Email != "" {
-			emails = append(emails, x.Contact.Email)
-		}
+	defer f.Close()
+	index := []string{"Id", "OwnerId", "FirstName", "LastName", "Email", "PhoneNumber", "AltPhoneNumber", "Tags", "Company"}
+	w := csv.NewWriter(f)
+	w.Write(index)
+	for _, x := range data {
+		w.Write(x.toStringArray())
 	}
-	w := csv.NewWriter(emailFile)
-	w.Write(emails)
 	w.Flush()
+}
+
+func (c Contact) toStringArray() []string {
+	var words []string
+	words = append(words, c.Id, c.OwnerId, c.FirstName, c.LastName, c.Email, c.PhoneNumber, c.AltPhoneNumber)
+	for _, x := range c.Tags {
+		words = append(words, x)
+	}
+	words = append(words, c.Company.toCSV("'"))
+	return words
+}
+
+func (c Company) toCSV(seperator string) string {
+	return c.Name + seperator + c.Website + seperator + c.AnnualRevenue + seperator + c.SicCode + c.Physical.toCSV("\"") + c.Mailing.toCSV("\"")
+}
+
+func (a Address) toCSV(seperator string) string {
+	return a.Street1 + seperator + a.Street2 + seperator + a.City + seperator + a.State + seperator + a.Zip + seperator + fmt.Sprintf("%d", a.CountryCode)
 }

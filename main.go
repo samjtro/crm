@@ -13,5 +13,4 @@ func main() {
 		Leads: importZohoLeads(fmt.Sprintf("%s/Downloads/Leads_2024_07_01.csv", homedir)),
 		Tasks: importZohoTasks(fmt.Sprintf("%s/Downloads/Tasks_2024_07_01.csv", homedir)),
 	}
-	db.uploadDealsToS3("")
 }
