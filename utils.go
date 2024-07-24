@@ -257,12 +257,16 @@ func (d Deals) toContacts() Contacts {
 func (c Contacts) filterByTags(tags ...string) Contacts {
 	var contacts Contacts
 	for _, x := range c.Contacts {
+		t := false
 		for _, y := range x.Tags {
 			for _, z := range tags {
 				if y == z {
-					contacts.Contacts = append(contacts.Contacts, x)
+					t = true
 				}
 			}
+		}
+		if t {
+			contacts.Contacts = append(contacts.Contacts, x)
 		}
 	}
 	return contacts
@@ -298,32 +302,21 @@ func (c Contacts) exportToCSV() {
 	check(err)
 	defer f.Close()
 	// TODO: programmatic indexing
-	index := []string{"Id", "OwnerId", "FirstName", "LastName", "Email", "PhoneNumber", "AltPhoneNumber", "Tags", "Company"}
+	index := []string{"Id", "OwnerId", "FirstName", "LastName", "Email", "PhoneNumber", "AltPhoneNumber", "Tags", "Company Name", "Website", "Annual Revenue", "Sic Code", "Addresses"}
 	w := csv.NewWriter(f)
 	w.Write(index)
 	for _, x := range c.Contacts {
-		w.Write(x.toStringArray())
+		w.Write(append([]string{}, x.Id, x.OwnerId, x.FirstName, x.LastName, x.Email, x.PhoneNumber, x.AltPhoneNumber, toCsv(x.Tags), x.Company.Name, x.Company.Website, x.Company.AnnualRevenue, x.Company.SicCode, x.Company.Physical.Street1, x.Company.Physical.Street2, x.Company.Physical.City, x.Company.Physical.State, x.Company.Physical.Zip, fmt.Sprintf("%d", x.Company.Physical.CountryCode), x.Company.Mailing.Street1, x.Company.Mailing.Street2, x.Company.Mailing.City, x.Company.Mailing.State, x.Company.Mailing.Zip, fmt.Sprintf("%d", x.Company.Mailing.CountryCode)))
 	}
 	w.Flush()
 }
 
-// export Contact to array of strings
-func (c Contact) toStringArray() []string {
-	var words []string
-	words = append(words, c.Id, c.OwnerId, c.FirstName, c.LastName, c.Email, c.PhoneNumber, c.AltPhoneNumber)
-	words = append(words, c.Tags...)
-	words = append(words, c.Company.toCSV("'"))
-	return words
-}
-
-// export Company to csv using seperator
-func (c Company) toCSV(seperator string) string {
-	return c.Name + seperator + c.Website + seperator + c.AnnualRevenue + seperator + c.SicCode + c.Physical.toCSV("\"") + c.Mailing.toCSV("\"")
-}
-
-// export Company to csv using seperator
-func (a Address) toCSV(seperator string) string {
-	return a.Street1 + seperator + a.Street2 + seperator + a.City + seperator + a.State + seperator + a.Zip + seperator + fmt.Sprintf("%d", a.CountryCode)
+func toCsv(s []string) string {
+	var returned string
+	for _, x := range s {
+		returned += x + ","
+	}
+	return returned[:len(returned)-1]
 }
 
 /* export - s3 */
