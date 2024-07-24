@@ -15,10 +15,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
+type Contacts struct{ Contacts []Contact }
+type Leads struct{ Leads []Lead }
+type Deals struct{ Deals []Deal }
+type Tasks struct{ Tasks []Task }
+type Users struct{ Users []User }
+
 type Data struct {
-	Leads []Lead
-	Deals []Deal
-	Tasks []Task
+	Leads Leads
+	Deals Deals
+	Tasks Tasks
+	Users Users
 }
 
 type Address struct {
@@ -91,7 +98,10 @@ func check(err error) {
 	}
 }
 
-func importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string) []Deal {
+/* import - zoho */
+
+// import zoho deals from CSV
+func (d *Data) importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string) {
 	dealFile, err := os.Open(pathToDealsCSV)
 	check(err)
 	defer dealFile.Close()
@@ -107,7 +117,7 @@ func importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string
 	check(err)
 	contactLines, err := csv.NewReader(contactFile).ReadAll()
 	check(err)
-	var deals []Deal
+	// TODO: programmatic indexing
 	for _, x := range dealLines[1:] {
 		stage := Stage{
 			Name:        x[7],
@@ -126,6 +136,18 @@ func importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string
 		}
 		var contact Contact
 		for _, z := range contactLines[1:] {
+			var user User
+			t := false
+			for _, a := range d.Users.Users {
+				if a.Id == z[1] {
+					t = true
+				}
+			}
+			if !t {
+				user.Id = z[1]
+				user.Name = z[2]
+				d.Users.Users = append(d.Users.Users, user)
+			}
 			if z[0] == x[15] {
 				contact = Contact{
 					Id:             z[0],
@@ -140,22 +162,21 @@ func importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string
 				}
 			}
 		}
-		deals = append(deals, Deal{
+		d.Deals.Deals = append(d.Deals.Deals, Deal{
 			Stage:   stage,
 			Contact: contact,
 		})
 	}
-	return deals
 }
 
-// import CSV from Zoho "Leads" module
-func importZohoLeads(path string) []Lead {
+// import zoho leads from CSV
+func (d *Data) importZohoLeads(path string) {
 	f, err := os.Open(path)
 	check(err)
 	defer f.Close()
 	lines, err := csv.NewReader(f).ReadAll()
 	check(err)
-	var leads []Lead
+	// TODO: programmatic indexing
 	for _, x := range lines[1:] {
 		company := Company{
 			Name:          x[3],
@@ -174,7 +195,7 @@ func importZohoLeads(path string) []Lead {
 				Zip:     x[37],
 			},
 		}
-		leads = append(leads, Lead{Status: x[9], Contact: Contact{
+		d.Leads.Leads = append(d.Leads.Leads, Lead{Status: x[9], Contact: Contact{
 			Company:        company,
 			Id:             x[0],
 			OwnerId:        x[1],
@@ -186,18 +207,18 @@ func importZohoLeads(path string) []Lead {
 			Tags:           strings.Split(x[19], ","),
 		}})
 	}
-	return leads
 }
 
-func importZohoTasks(path string) []Task {
+// import zoho tasks from CSV
+func (d *Data) importZohoTasks(path string) {
 	f, err := os.Open(path)
 	check(err)
 	defer f.Close()
 	lines, err := csv.NewReader(f).ReadAll()
 	check(err)
-	var tasks []Task
+	// TODO: programmatic indexing
 	for _, x := range lines[1:] {
-		tasks = append(tasks, Task{
+		d.Tasks.Tasks = append(d.Tasks.Tasks, Task{
 			Id:          x[0],
 			OwnerId:     x[1],
 			Subject:     x[3],
@@ -210,16 +231,110 @@ func importZohoTasks(path string) []Task {
 			Tags:        strings.Split(x[21], ","),
 		})
 	}
-	return tasks
 }
 
+/* operations */
+
+// convert Leads to Contacts
+func (l Leads) toContacts() Contacts {
+	var contacts Contacts
+	for _, x := range l.Leads {
+		contacts.Contacts = append(contacts.Contacts, x.Contact)
+	}
+	return contacts
+}
+
+// convert Deals to Contacts
+func (d Deals) toContacts() Contacts {
+	var contacts Contacts
+	for _, x := range d.Deals {
+		contacts.Contacts = append(contacts.Contacts, x.Contact)
+	}
+	return contacts
+}
+
+// filter Leads, return Contacts with a tag matching one of the given "tags"
+func (c Contacts) filterByTags(tags ...string) Contacts {
+	var contacts Contacts
+	for _, x := range c.Contacts {
+		for _, y := range x.Tags {
+			for _, z := range tags {
+				if y == z {
+					contacts.Contacts = append(contacts.Contacts, x)
+				}
+			}
+		}
+	}
+	return contacts
+}
+
+// filter Leads, return Contacts with an email address
+func (c Contacts) filterByHasEmail() Contacts {
+	var contacts Contacts
+	for _, x := range c.Contacts {
+		if x.Email != "" {
+			contacts.Contacts = append(contacts.Contacts, x)
+		}
+	}
+	return contacts
+}
+
+// filter Leads, return Contacts matching lead owner ID
+func (c Contacts) filterByOwnerID(id string) Contacts {
+	var contacts Contacts
+	for _, x := range c.Contacts {
+		if x.OwnerId == id {
+			contacts.Contacts = append(contacts.Contacts, x)
+		}
+	}
+	return contacts
+}
+
+/* export - CSV */
+
+// export []Contact to "/export.csv"
+func (c Contacts) exportToCSV() {
+	f, err := os.Create("export.csv")
+	check(err)
+	defer f.Close()
+	// TODO: programmatic indexing
+	index := []string{"Id", "OwnerId", "FirstName", "LastName", "Email", "PhoneNumber", "AltPhoneNumber", "Tags", "Company"}
+	w := csv.NewWriter(f)
+	w.Write(index)
+	for _, x := range c.Contacts {
+		w.Write(x.toStringArray())
+	}
+	w.Flush()
+}
+
+// export Contact to array of strings
+func (c Contact) toStringArray() []string {
+	var words []string
+	words = append(words, c.Id, c.OwnerId, c.FirstName, c.LastName, c.Email, c.PhoneNumber, c.AltPhoneNumber)
+	words = append(words, c.Tags...)
+	words = append(words, c.Company.toCSV("'"))
+	return words
+}
+
+// export Company to csv using seperator
+func (c Company) toCSV(seperator string) string {
+	return c.Name + seperator + c.Website + seperator + c.AnnualRevenue + seperator + c.SicCode + c.Physical.toCSV("\"") + c.Mailing.toCSV("\"")
+}
+
+// export Company to csv using seperator
+func (a Address) toCSV(seperator string) string {
+	return a.Street1 + seperator + a.Street2 + seperator + a.City + seperator + a.State + seperator + a.Zip + seperator + fmt.Sprintf("%d", a.CountryCode)
+}
+
+/* export - s3 */
+
 // upload deals to s3 bucket
-func (d Data) uploadDealsToS3(bucketName string) {
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-2"))
+func (d Data) uploadDealsToS3(bucketName, regionName string) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(regionName))
 	check(err)
 	client := s3.NewFromConfig(cfg)
 	var buf bytes.Buffer
-	for _, x := range d.Deals {
+	for _, x := range d.Deals.Deals {
 		gob.NewEncoder(&buf).Encode(x)
 		_, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
 			Bucket: aws.String(bucketName),
@@ -231,12 +346,12 @@ func (d Data) uploadDealsToS3(bucketName string) {
 }
 
 // upload leads to s3 bucket
-func (d Data) uploadLeadsToS3(bucketName string) {
-	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-east-2"))
+func (d Data) uploadLeadsToS3(bucketName, regionName string) {
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(regionName))
 	check(err)
 	client := s3.NewFromConfig(cfg)
 	var buf bytes.Buffer
-	for _, x := range d.Leads {
+	for _, x := range d.Leads.Leads {
 		gob.NewEncoder(&buf).Encode(x)
 		_, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
 			Bucket: aws.String(bucketName),
@@ -245,36 +360,4 @@ func (d Data) uploadLeadsToS3(bucketName string) {
 		})
 		check(err)
 	}
-}
-
-// export []Contact to csv "/export.csv"
-func exportToCSV(data []Contact) {
-	f, err := os.Create("export.csv")
-	check(err)
-	defer f.Close()
-	index := []string{"Id", "OwnerId", "FirstName", "LastName", "Email", "PhoneNumber", "AltPhoneNumber", "Tags", "Company"}
-	w := csv.NewWriter(f)
-	w.Write(index)
-	for _, x := range data {
-		w.Write(x.toStringArray())
-	}
-	w.Flush()
-}
-
-func (c Contact) toStringArray() []string {
-	var words []string
-	words = append(words, c.Id, c.OwnerId, c.FirstName, c.LastName, c.Email, c.PhoneNumber, c.AltPhoneNumber)
-	for _, x := range c.Tags {
-		words = append(words, x)
-	}
-	words = append(words, c.Company.toCSV("'"))
-	return words
-}
-
-func (c Company) toCSV(seperator string) string {
-	return c.Name + seperator + c.Website + seperator + c.AnnualRevenue + seperator + c.SicCode + c.Physical.toCSV("\"") + c.Mailing.toCSV("\"")
-}
-
-func (a Address) toCSV(seperator string) string {
-	return a.Street1 + seperator + a.Street2 + seperator + a.City + seperator + a.State + seperator + a.Zip + seperator + fmt.Sprintf("%d", a.CountryCode)
 }
