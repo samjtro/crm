@@ -3,9 +3,13 @@ module github.com/samjtro/crm
 go 1.22.4
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.30.3 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.30.3
+	github.com/aws/aws-sdk-go-v2/config v1.27.27
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.58.2
+)
+
+require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.3 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.27.27 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.27 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.11 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.15 // indirect
@@ -16,19 +20,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.3.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.11.17 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.17.15 // indirect
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.58.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.22.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.26.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.3 // indirect
 	github.com/aws/smithy-go v1.20.3 // indirect
-	github.com/gdamore/encoding v1.0.0 // indirect
-	github.com/gdamore/tcell/v2 v2.7.1 // indirect
-	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
-	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
-	github.com/mattn/go-runewidth v0.0.15 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
-	golang.org/x/sys v0.17.0 // indirect
-	golang.org/x/term v0.17.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
 )
