@@ -7,6 +7,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.27.27
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.58.2
 	github.com/dgraph-io/badger/v4 v4.2.0
+	golang.org/x/text v0.7.0
+	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f
 )
 
 require (

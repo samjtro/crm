@@ -9,11 +9,14 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/dgraph-io/badger/v4"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 type Contacts struct{ Contacts []Contact }
@@ -87,9 +90,8 @@ type Task struct {
 	Id          string
 	OwnerId     string
 	Subject     string
-	DueDate     string
+	DueDate     time.Time
 	RelatedTo   string
-	RelatedToId string
 	Status      string
 	Priority    string
 	Description string
@@ -107,6 +109,10 @@ func check(err error) {
 	}
 }
 
+func fixCapitalization(s string) string {
+	return cases.Title(language.English, cases.Compact).String(s)
+}
+
 func homedir() string {
 	homedir, err := os.UserHomeDir()
 	check(err)
@@ -116,7 +122,7 @@ func homedir() string {
 /* import - zoho */
 
 // import zoho deals from CSV
-func (d *DataLake) importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string) {
+func (d *DataLake) ImportZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToContactsCSV string) {
 	dealFile, err := os.Open(pathToDealsCSV)
 	check(err)
 	defer dealFile.Close()
@@ -142,8 +148,8 @@ func (d *DataLake) importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToCont
 		for _, y := range accountLines[1:] {
 			if y[0] == x[5] {
 				company = Company{
-					Name:          y[3],
-					Website:       y[8],
+					Name:          fixCapitalization(y[3]),
+					Website:       strings.ToLower(y[8]),
 					AnnualRevenue: y[12],
 					SicCode:       y[13],
 				}
@@ -163,12 +169,18 @@ func (d *DataLake) importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToCont
 				user.Name = z[2]
 				d.Users.Users = append(d.Users.Users, user)
 			}
+			company.Mailing = Address{
+				Street1: fixCapitalization(z[24]),
+				City:    fixCapitalization(z[26]),
+				State:   z[28],
+				Zip:     z[30],
+			}
 			if z[0] == x[15] {
 				contact = Contact{
 					Id:             z[0],
 					OwnerId:        z[1],
-					FirstName:      z[3],
-					LastName:       z[4],
+					FirstName:      fixCapitalization(z[3]),
+					LastName:       fixCapitalization(z[4]),
 					Email:          z[9],
 					PhoneNumber:    z[12],
 					AltPhoneNumber: z[13],
@@ -194,7 +206,7 @@ func (d *DataLake) importZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToCont
 }
 
 // import zoho leads from CSV
-func (d *DataLake) importZohoLeads(path string) {
+func (d *DataLake) ImportZohoLeads(path string) {
 	f, err := os.Open(path)
 	check(err)
 	defer f.Close()
@@ -203,18 +215,18 @@ func (d *DataLake) importZohoLeads(path string) {
 	// TODO: programmatic indexing
 	for _, x := range lines[1:] {
 		company := Company{
-			Name:          x[3],
-			Website:       x[8],
+			Name:          fixCapitalization(x[3]),
+			Website:       strings.ToLower(x[8]),
 			AnnualRevenue: x[10],
 			Physical: Address{
-				Street1: x[12],
-				City:    x[13],
+				Street1: fixCapitalization(x[12]),
+				City:    fixCapitalization(x[13]),
 				State:   x[14],
 				Zip:     x[15],
 			},
 			Mailing: Address{
-				Street1: x[41],
-				City:    x[42],
+				Street1: fixCapitalization(x[41]),
+				City:    fixCapitalization(x[42]),
 				State:   x[38],
 				Zip:     x[37],
 			},
@@ -223,8 +235,8 @@ func (d *DataLake) importZohoLeads(path string) {
 			Company:        company,
 			Id:             x[0],
 			OwnerId:        x[1],
-			FirstName:      x[4],
-			LastName:       x[5],
+			FirstName:      fixCapitalization(x[4]),
+			LastName:       fixCapitalization(x[5]),
 			Email:          x[6],
 			PhoneNumber:    x[7],
 			AltPhoneNumber: x[32],
@@ -242,7 +254,7 @@ func (d *DataLake) importZohoLeads(path string) {
 }
 
 // import zoho tasks from CSV
-func (d *DataLake) importZohoTasks(path string) {
+func (d *DataLake) ImportZohoTasks(path string) {
 	f, err := os.Open(path)
 	check(err)
 	defer f.Close()
@@ -250,20 +262,21 @@ func (d *DataLake) importZohoTasks(path string) {
 	check(err)
 	// TODO: programmatic indexing
 	for _, x := range lines[1:] {
+		duedate, err := time.Parse("YYYY-MM-DD", x[4])
+		check(err)
 		task := Task{
 			Id:          x[0],
 			OwnerId:     x[1],
 			Subject:     x[3],
-			DueDate:     x[4],
-			RelatedTo:   x[8],
-			RelatedToId: x[7],
+			DueDate:     duedate,
+			RelatedTo:   x[7],
 			Status:      x[9],
 			Priority:    x[10],
 			Description: x[17],
 			Tags:        strings.Split(x[21], ","),
 		}
 		d.Tasks.Tasks = append(d.Tasks.Tasks, task)
-		_, err := d.LeadsDB.Get([]byte(task.Id))
+		_, err = d.LeadsDB.Get([]byte(task.Id))
 		var buf bytes.Buffer
 		if err != nil {
 			gob.NewEncoder(&buf).Encode(task)
@@ -274,7 +287,7 @@ func (d *DataLake) importZohoTasks(path string) {
 
 /* operations */
 
-func (d *Deals) addDeal(id, ownerid, firstname, lastname, email, phonenumber string, company Company, tags ...string) {
+func (d *Deals) AddDeal(id, ownerid, firstname, lastname, email, phonenumber string, company Company, tags ...string) {
 	d.Deals = append(d.Deals, Deal{Contact: Contact{
 		Id:          id,
 		OwnerId:     ownerid,
@@ -287,7 +300,7 @@ func (d *Deals) addDeal(id, ownerid, firstname, lastname, email, phonenumber str
 	}})
 }
 
-func (l *Leads) addLead(id, ownerid, firstname, lastname, email, phonenumber string, company Company, tags ...string) {
+func (l *Leads) AddLead(id, ownerid, firstname, lastname, email, phonenumber string, company Company, tags ...string) {
 	l.Leads = append(l.Leads, Lead{Contact: Contact{
 		Id:          id,
 		OwnerId:     ownerid,
@@ -300,14 +313,13 @@ func (l *Leads) addLead(id, ownerid, firstname, lastname, email, phonenumber str
 	}})
 }
 
-func (t *Tasks) addTask(id, ownerid, subject, duedate, relatedto, relatedtoid, status, priority, description string, tags ...string) {
+func (t *Tasks) AddTask(id, ownerid, subject string, duedate time.Time, relatedto, status, priority, description string, tags ...string) {
 	t.Tasks = append(t.Tasks, Task{
 		Id:          id,
 		OwnerId:     ownerid,
 		Subject:     subject,
 		DueDate:     duedate,
 		RelatedTo:   relatedto,
-		RelatedToId: relatedtoid,
 		Status:      status,
 		Priority:    priority,
 		Description: description,
@@ -316,7 +328,7 @@ func (t *Tasks) addTask(id, ownerid, subject, duedate, relatedto, relatedtoid, s
 }
 
 // convert Leads to Contacts
-func (l Leads) toContacts() Contacts {
+func (l Leads) ToContacts() Contacts {
 	var contacts Contacts
 	for _, x := range l.Leads {
 		contacts.Contacts = append(contacts.Contacts, x.Contact)
@@ -325,7 +337,7 @@ func (l Leads) toContacts() Contacts {
 }
 
 // convert Deals to Contacts
-func (d Deals) toContacts() Contacts {
+func (d Deals) ToContacts() Contacts {
 	var contacts Contacts
 	for _, x := range d.Deals {
 		contacts.Contacts = append(contacts.Contacts, x.Contact)
@@ -333,8 +345,8 @@ func (d Deals) toContacts() Contacts {
 	return contacts
 }
 
-// filter Leads, return Contacts with a tag matching one of the given "tags"
-func (c Contacts) filterByTags(tags ...string) Contacts {
+// return Contacts with matching one (or more) of the given tags
+func (c Contacts) FilterByTags(tags ...string) Contacts {
 	var contacts Contacts
 	for _, x := range c.Contacts {
 		t := false
@@ -352,8 +364,8 @@ func (c Contacts) filterByTags(tags ...string) Contacts {
 	return contacts
 }
 
-// filter Leads, return Contacts with an email address
-func (c Contacts) filterByHasEmail() Contacts {
+// return Contacts with an email address
+func (c Contacts) FilterByHasEmail() Contacts {
 	var contacts Contacts
 	for _, x := range c.Contacts {
 		if x.Email != "" {
@@ -363,8 +375,8 @@ func (c Contacts) filterByHasEmail() Contacts {
 	return contacts
 }
 
-// filter Leads, return Contacts matching lead owner ID
-func (c Contacts) filterByOwnerID(id string) Contacts {
+// return Contacts matching owner ID
+func (c Contacts) FilterByOwnerID(id string) Contacts {
 	var contacts Contacts
 	for _, x := range c.Contacts {
 		if x.OwnerId == id {
@@ -374,47 +386,15 @@ func (c Contacts) filterByOwnerID(id string) Contacts {
 	return contacts
 }
 
-// WIP: this is broken
-// return Deal with given id from badgerdb
-func (d *DataLake) getDealById(id string) Deal {
-	var deal Deal
-	check(d.DealsDB.db.View(func(txn *badger.Txn) error {
-		i, err := txn.Get([]byte(id))
-		if err != nil {
-			return nil
+// return Contacts matching company's state abbreviation
+func (c Contacts) FilterByState(state string) Contacts {
+	var contacts Contacts
+	for _, x := range c.Contacts {
+		if (x.Company.Physical.State == state) || (x.Company.Mailing.State == state) {
+			contacts.Contacts = append(contacts.Contacts, x)
 		}
-		val, err := i.ValueCopy(nil)
-		if err != nil {
-			return nil
-		}
-		d := gob.NewDecoder(bytes.NewReader(val))
-		if err := d.Decode(&deal); err != nil {
-			panic(err)
-		}
-		return nil
-	}))
-	return deal
-}
-
-// return Lead with given id from badgerdb
-func (d *DataLake) getLeadById(id string) Lead {
-	var lead Lead
-	check(d.LeadsDB.db.View(func(txn *badger.Txn) error {
-		i, err := txn.Get([]byte(id))
-		if err != nil {
-			return nil
-		}
-		val, err := i.ValueCopy(nil)
-		if err != nil {
-			return nil
-		}
-		d := gob.NewDecoder(bytes.NewReader(val))
-		if err := d.Decode(&lead); err != nil {
-			panic(err)
-		}
-		return nil
-	}))
-	return lead
+	}
+	return contacts
 }
 
 /* badger */
@@ -481,14 +461,57 @@ func (db *DB) Delete(k []byte) error {
 	return err
 }
 
+// WIP: this is broken
+// return Deal with given id from badgerdb
+func (d *DataLake) GetDealById(id string) Deal {
+	var deal Deal
+	check(d.DealsDB.db.View(func(txn *badger.Txn) error {
+		i, err := txn.Get([]byte(id))
+		if err != nil {
+			return nil
+		}
+		val, err := i.ValueCopy(nil)
+		if err != nil {
+			return nil
+		}
+		d := gob.NewDecoder(bytes.NewReader(val))
+		if err := d.Decode(&deal); err != nil {
+			panic(err)
+		}
+		return nil
+	}))
+	return deal
+}
+
+// return Lead with given id from badgerdb
+func (d *DataLake) GetLeadById(id string) Lead {
+	var lead Lead
+	check(d.LeadsDB.db.View(func(txn *badger.Txn) error {
+		i, err := txn.Get([]byte(id))
+		if err != nil {
+			return nil
+		}
+		val, err := i.ValueCopy(nil)
+		if err != nil {
+			return nil
+		}
+		d := gob.NewDecoder(bytes.NewReader(val))
+		if err := d.Decode(&lead); err != nil {
+			panic(err)
+		}
+		return nil
+	}))
+	return lead
+}
+
 // TODO
-func (d *DataLake) syncLocal() error { return fmt.Errorf("hello, world") }
+// func (d *DataLake) syncLocal() error {}
 
 /* export - CSV */
 
 // export []Contact to "/export.csv"
-func (c Contacts) exportToCSV() {
-	f, err := os.Create("export.csv")
+func (c Contacts) ExportToCSV(path string) {
+	f, err := os.Create(path)
 	check(err)
 	defer f.Close()
 	// TODO: programmatic indexing
@@ -512,7 +535,7 @@ func toCsv(s []string) string {
 /* export - s3 */
 
 // upload deals to s3 bucket
-func (d DataLake) uploadDealsToS3(bucketName, regionName string) {
+func (d DataLake) UploadDealsToS3(bucketName, regionName string) {
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(regionName))
 	check(err)
 	client := s3.NewFromConfig(cfg)
@@ -529,7 +552,7 @@ func (d DataLake) uploadDealsToS3(bucketName, regionName string) {
 }
 
 // upload leads to s3 bucket
-func (d DataLake) uploadLeadsToS3(bucketName, regionName string) {
+func (d DataLake) UploadLeadsToS3(bucketName, regionName string) {
 	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(regionName))
 	check(err)
 	client := s3.NewFromConfig(cfg)
