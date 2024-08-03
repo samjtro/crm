@@ -19,11 +19,15 @@ import (
 	"golang.org/x/text/language"
 )
 
-type Contacts struct{ Contacts []Contact }
-type Leads struct{ Leads []Lead }
-type Deals struct{ Deals []Deal }
-type Tasks struct{ Tasks []Task }
-type Users struct{ Users []User }
+type Contacts []Contact
+type Leads []Lead
+type Deals []Deal
+type Tasks []Task
+type Users []User
+
+type Record interface {
+	Add()
+}
 
 type DB struct {
 	db *badger.DB
@@ -159,7 +163,7 @@ func (d *DataLake) ImportZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToCont
 		for _, z := range contactLines[1:] {
 			var user User
 			t := false
-			for _, a := range d.Users.Users {
+			for _, a := range d.Users {
 				if a.Id == z[1] {
 					t = true
 				}
@@ -167,7 +171,7 @@ func (d *DataLake) ImportZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToCont
 			if !t {
 				user.Id = z[1]
 				user.Name = z[2]
-				d.Users.Users = append(d.Users.Users, user)
+				d.Users = append(d.Users, user)
 			}
 			company.Mailing = Address{
 				Street1: fixCapitalization(z[24]),
@@ -193,7 +197,7 @@ func (d *DataLake) ImportZohoDeals(pathToDealsCSV, pathToAccountsCSV, pathToCont
 			Stage:   stage,
 			Contact: contact,
 		}
-		d.Deals.Deals = append(d.Deals.Deals, deal)
+		d.Deals = append(d.Deals, deal)
 		// broken
 		val, err := d.DealsDB.Get([]byte(deal.Contact.Id))
 		check(err)
@@ -242,7 +246,7 @@ func (d *DataLake) ImportZohoLeads(path string) {
 			AltPhoneNumber: x[32],
 			Tags:           strings.Split(x[19], ","),
 		}}
-		d.Leads.Leads = append(d.Leads.Leads, lead)
+		d.Leads = append(d.Leads, lead)
 		val, err := d.LeadsDB.Get([]byte(lead.Contact.Id))
 		check(err)
 		var buf bytes.Buffer
@@ -275,7 +279,7 @@ func (d *DataLake) ImportZohoTasks(path string) {
 			Description: x[17],
 			Tags:        strings.Split(x[21], ","),
 		}
-		d.Tasks.Tasks = append(d.Tasks.Tasks, task)
+		d.Tasks = append(d.Tasks, task)
 		_, err = d.LeadsDB.Get([]byte(task.Id))
 		var buf bytes.Buffer
 		if err != nil {
@@ -285,10 +289,10 @@ func (d *DataLake) ImportZohoTasks(path string) {
 	}
 }
 
-/* operations */
+/* WIP: operations
 
-func (d *Deals) AddDeal(id, ownerid, firstname, lastname, email, phonenumber string, company Company, tags ...string) {
-	d.Deals = append(d.Deals, Deal{Contact: Contact{
+func (d *Deals) Add(id, ownerid, firstname, lastname, email, phonenumber string, company Company, tags ...string) {
+	d = append(d, Deal{Contact: Contact{
 		Id:          id,
 		OwnerId:     ownerid,
 		FirstName:   firstname,
@@ -300,8 +304,8 @@ func (d *Deals) AddDeal(id, ownerid, firstname, lastname, email, phonenumber str
 	}})
 }
 
-func (l *Leads) AddLead(id, ownerid, firstname, lastname, email, phonenumber string, company Company, tags ...string) {
-	l.Leads = append(l.Leads, Lead{Contact: Contact{
+func (l *Leads) Add(id, ownerid, firstname, lastname, email, phonenumber string, company Company, tags ...string) {
+	l = append(l, Lead{Contact: Contact{
 		Id:          id,
 		OwnerId:     ownerid,
 		FirstName:   firstname,
@@ -313,8 +317,8 @@ func (l *Leads) AddLead(id, ownerid, firstname, lastname, email, phonenumber str
 	}})
 }
 
-func (t *Tasks) AddTask(id, ownerid, subject string, duedate time.Time, relatedto, status, priority, description string, tags ...string) {
-	t.Tasks = append(t.Tasks, Task{
+func (t *Tasks) Add(id, ownerid, subject string, duedate time.Time, relatedto, status, priority, description string, tags ...string) {
+	t = append(t, Task{
 		Id:          id,
 		OwnerId:     ownerid,
 		Subject:     subject,
@@ -325,13 +329,13 @@ func (t *Tasks) AddTask(id, ownerid, subject string, duedate time.Time, relatedt
 		Description: description,
 		Tags:        tags,
 	})
-}
+}*/
 
 // convert Leads to Contacts
 func (l Leads) ToContacts() Contacts {
 	var contacts Contacts
-	for _, x := range l.Leads {
-		contacts.Contacts = append(contacts.Contacts, x.Contact)
+	for _, x := range l {
+		contacts = append(contacts, x.Contact)
 	}
 	return contacts
 }
@@ -339,8 +343,8 @@ func (l Leads) ToContacts() Contacts {
 // convert Deals to Contacts
 func (d Deals) ToContacts() Contacts {
 	var contacts Contacts
-	for _, x := range d.Deals {
-		contacts.Contacts = append(contacts.Contacts, x.Contact)
+	for _, x := range d {
+		contacts = append(contacts, x.Contact)
 	}
 	return contacts
 }
@@ -348,7 +352,7 @@ func (d Deals) ToContacts() Contacts {
 // return Contacts with matching one (or more) of the given tags
 func (c Contacts) FilterByTags(tags ...string) Contacts {
 	var contacts Contacts
-	for _, x := range c.Contacts {
+	for _, x := range c {
 		t := false
 		for _, y := range x.Tags {
 			for _, z := range tags {
@@ -358,7 +362,7 @@ func (c Contacts) FilterByTags(tags ...string) Contacts {
 			}
 		}
 		if t {
-			contacts.Contacts = append(contacts.Contacts, x)
+			contacts = append(contacts, x)
 		}
 	}
 	return contacts
@@ -367,9 +371,9 @@ func (c Contacts) FilterByTags(tags ...string) Contacts {
 // return Contacts with an email address
 func (c Contacts) FilterByHasEmail() Contacts {
 	var contacts Contacts
-	for _, x := range c.Contacts {
+	for _, x := range c {
 		if x.Email != "" {
-			contacts.Contacts = append(contacts.Contacts, x)
+			contacts = append(contacts, x)
 		}
 	}
 	return contacts
@@ -378,9 +382,9 @@ func (c Contacts) FilterByHasEmail() Contacts {
 // return Contacts matching owner ID
 func (c Contacts) FilterByOwnerID(id string) Contacts {
 	var contacts Contacts
-	for _, x := range c.Contacts {
+	for _, x := range c {
 		if x.OwnerId == id {
-			contacts.Contacts = append(contacts.Contacts, x)
+			contacts = append(contacts, x)
 		}
 	}
 	return contacts
@@ -389,9 +393,9 @@ func (c Contacts) FilterByOwnerID(id string) Contacts {
 // return Contacts matching company's state abbreviation
 func (c Contacts) FilterByState(state string) Contacts {
 	var contacts Contacts
-	for _, x := range c.Contacts {
+	for _, x := range c {
 		if (x.Company.Physical.State == state) || (x.Company.Mailing.State == state) {
-			contacts.Contacts = append(contacts.Contacts, x)
+			contacts = append(contacts, x)
 		}
 	}
 	return contacts
@@ -518,7 +522,7 @@ func (c Contacts) ExportToCSV(path string) {
 	index := []string{"Id", "OwnerId", "FirstName", "LastName", "Email", "PhoneNumber", "AltPhoneNumber", "Tags", "Company Name", "Website", "Annual Revenue", "Sic Code", "Addresses"}
 	w := csv.NewWriter(f)
 	w.Write(index)
-	for _, x := range c.Contacts {
+	for _, x := range c {
 		w.Write(append([]string{}, x.Id, x.OwnerId, x.FirstName, x.LastName, x.Email, x.PhoneNumber, x.AltPhoneNumber, toCsv(x.Tags), x.Company.Name, x.Company.Website, x.Company.AnnualRevenue, x.Company.SicCode, x.Company.Physical.Street1, x.Company.Physical.Street2, x.Company.Physical.City, x.Company.Physical.State, x.Company.Physical.Zip, fmt.Sprintf("%d", x.Company.Physical.CountryCode), x.Company.Mailing.Street1, x.Company.Mailing.Street2, x.Company.Mailing.City, x.Company.Mailing.State, x.Company.Mailing.Zip, fmt.Sprintf("%d", x.Company.Mailing.CountryCode)))
 	}
 	w.Flush()
@@ -540,7 +544,7 @@ func (d DataLake) UploadDealsToS3(bucketName, regionName string) {
 	check(err)
 	client := s3.NewFromConfig(cfg)
 	var buf bytes.Buffer
-	for _, x := range d.Deals.Deals {
+	for _, x := range d.Deals {
 		gob.NewEncoder(&buf).Encode(x)
 		_, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
 			Bucket: aws.String(bucketName),
@@ -557,7 +561,7 @@ func (d DataLake) UploadLeadsToS3(bucketName, regionName string) {
 	check(err)
 	client := s3.NewFromConfig(cfg)
 	var buf bytes.Buffer
-	for _, x := range d.Leads.Leads {
+	for _, x := range d.Leads {
 		gob.NewEncoder(&buf).Encode(x)
 		_, err := client.PutObject(context.TODO(), &s3.PutObjectInput{
 			Bucket: aws.String(bucketName),
